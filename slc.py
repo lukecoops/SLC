@@ -1,9 +1,11 @@
+from __future__ import print_function, division, absolute_import, unicode_literals
 import socket
 import re
 import struct
+import sys
 
-print("SLC v1.0.0") # Software Version
-      
+print("BAE Systems Australia SLC v1.0.0") # Software Version
+
 # Function to get user input for product, IP address, and port
 def get_user_input():
     valid_products = ["DRX", "TOC", "ROC", "DWG"]
@@ -15,7 +17,7 @@ def get_user_input():
             print("Invalid product. Please enter one of the following: DRx, TOC, ROC, DWG.")
     
     while True:
-        ip_address = "127.0.0.1" # input("Enter IP Address: ")
+        ip_address = "127.0.0.1" # raw_input("Enter IP Address: ") if sys.version_info[0] < 3 else input("Enter IP Address: ")
         try:
             socket.inet_aton(ip_address)
             break
@@ -23,7 +25,7 @@ def get_user_input():
             print("Invalid IP address format. Please try again.")
     
     while True:
-        port = "65432" # input("Enter Port: ")
+        port = "65432" # raw_input("Enter Port: ") if sys.version_info[0] < 3 else input("Enter Port: ")
         if port.isdigit() and 0 < int(port) < 65536:
             port = int(port)
             break
@@ -98,7 +100,7 @@ def main():
         print(f"Error: The IP address {host} cannot be found.")
         return
     except socket.error as e:
-        print(f"Error: The IP address {host} cannot be connected to. Details: {e}")
+        print(f"Error: The IP address {host} is in use or cannot be connected to. Details: {e}")
         return
 
     while True:
@@ -108,12 +110,14 @@ def main():
             packet = create_data_packet(product, rw, address, val)
             client_socket.sendall(packet)
             response = client_socket.recv(1024)
+            print(f"Raw server response: {response}")
             print(f"Server response: {response.decode('utf-8')}")
         elif rw == 'r' and address:
             print(f"Command: {rw}, Address: {address}")
             packet = create_data_packet(product, rw, address)
             client_socket.sendall(packet)
             response = client_socket.recv(1024)
+            print(f"Raw server response: {response}")
             if len(response) >= 2:
                 data_word = struct.unpack('!H', response[:2])[0]
                 print(f"Data word: 0x{data_word:04X} ({data_word})")

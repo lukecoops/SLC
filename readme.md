@@ -65,7 +65,7 @@ Command Format
 Example Interaction
 -------------------
 ```
-SLC v1.0.0
+BAE Systems Australia SLC v1.0.0
 Enter Product (DRX, TOC, ROC, DWG): TOC
 Connected to server at 127.0.0.1:65432
 Enter a command in '[r/w] [address] [val]': r 1F34
