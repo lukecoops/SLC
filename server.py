@@ -17,14 +17,23 @@ while True:
     conn, addr = server_socket.accept()
     print(f"Connected by {addr}")
 
-    # Receive data from the client
-    data = conn.recv(1024)  # Buffer size is 1024 bytes
-    if not data:
-        break
-    print(f"Received: {data.decode()}")
+    while True:
+        # Receive data from the client
+        data = conn.recv(1024)  # Buffer size is 1024 bytes
+        if not data:
+            break
+        print(f"Received: {data.decode()}")
 
-    # Send a response back to the client
-    conn.sendall(b"Hello, Client!")
+        # Respond based on the received command
+        if data == b"Write Command":
+            response = b"Write Completed"
+        elif data == b"Read Command":
+            response = b"Read Value"
+        else:
+            response = b"Unknown Command"
+
+        # Send the response back to the client
+        conn.sendall(response)
 
     # Close the connection
     conn.close()
