@@ -2,6 +2,8 @@ import socket
 import re
 import struct
 
+print("SLC v1.0.0") # Software Version
+      
 # Function to get user input for product, IP address, and port
 def get_user_input():
     valid_products = ["DRX", "TOC", "ROC", "DWG"]
@@ -48,7 +50,7 @@ def calculate_crc(data):
 
 # Function to get user command
 def get_user_command():
-    command = input("Enter a command in '[r/w] [address] [val]: ")
+    command = input("Enter a command in '[r/w] [address] [val]': ")
     parts = command.split()
     if len(parts) == 2 and parts[0] == 'r' and is_valid_hex(parts[1]):
         rw, address = parts
@@ -96,21 +98,17 @@ def main():
         print(f"Error: The IP address {host} cannot be found.")
         return
     except socket.error as e:
-        print(f"Error: The IP address {host} is in use or cannot be connected to. Details: {e}")
+        print(f"Error: The IP address {host} cannot be connected to. Details: {e}")
         return
 
     while True:
         rw, address, val = get_user_command()
-        if rw == 'disconnect':
-            print("Disconnecting from server")
-            client_socket.close()
-            break
-        elif rw == 'w' and address and val:
+        if rw == 'w' and address and val:
             print(f"Command: {rw}, Address: {address}, Value: {val}")
             packet = create_data_packet(product, rw, address, val)
             client_socket.sendall(packet)
             response = client_socket.recv(1024)
-            print(f"Server response: {response}")
+            print(f"Server response: {response.decode('utf-8')}")
         elif rw == 'r' and address:
             print(f"Command: {rw}, Address: {address}")
             packet = create_data_packet(product, rw, address)
@@ -120,7 +118,7 @@ def main():
                 data_word = struct.unpack('!H', response[:2])[0]
                 print(f"Data word: 0x{data_word:04X} ({data_word})")
             else:
-                print(f"Server response: {response}")
+                print(f"Server response: {response.decode('utf-8')}")
         else:
             print("Please enter a valid command")
 

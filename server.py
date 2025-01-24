@@ -37,7 +37,7 @@ while True:
             break
 
         # Determine the product type from the packet
-        if len(data) == 10:  # Existing packet structure
+        if len(data) == 10:  # TOC/ROC packet structure 10 bytes
             header, message_type, address_word, data_word, crc_word = struct.unpack('!HHHHH', data[:10])
             received_crc = calculate_crc([header, message_type, address_word, data_word])
 
@@ -54,10 +54,10 @@ while True:
                     if (address_word & 0x7FFF) == 0x1000:  # Check if address is 1000
                         response = struct.pack('!H', 0x0BAE)  # Respond with 0x0BAE
                     else:
-                        response = b"Read Value"
+                        response = struct.pack('!H', 0xABCD)  # Respond with 0xABCD
                 else:
                     response = b"Unknown Command"
-        elif len(data) == 4:  # New packet structure
+        elif len(data) == 4:  # DRX/DWG packet structure 4 bytes
             packet = struct.unpack('!I', data[:4])[0]
             rw_bit = (packet >> 31) & 0x1
             address_bits = (packet >> 16) & 0x7FFF
@@ -72,7 +72,7 @@ while True:
                 if address_bits == 0x1000:  # Check if address is 1000
                     response = struct.pack('!H', 0x0BAE)  # Respond with 0x0BAE
                 else:
-                    response = struct.pack('!H', data_bits)  # Respond with the data bits
+                    response = struct.pack('!H', 0xABCD)  # Respond with 0xABCD
         else:
             response = b"Invalid Packet"
 
