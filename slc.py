@@ -13,7 +13,7 @@ def get_user_input():
             print("Invalid product. Please enter one of the following: DRx, TOC, ROC, DWG.")
     
     while True:
-        ip_address = input("Enter IP Address: ")
+        ip_address = "127.0.0.1" # input("Enter IP Address: ")
         try:
             socket.inet_aton(ip_address)
             break
@@ -21,7 +21,7 @@ def get_user_input():
             print("Invalid IP address format. Please try again.")
     
     while True:
-        port = input("Enter Port: ")
+        port = "65432" # input("Enter Port: ")
         if port.isdigit() and 0 < int(port) < 65536:
             port = int(port)
             break
@@ -39,7 +39,7 @@ def calculate_crc(data):
     crc = 0xFFFF
     for word in data:
         crc ^= word
-        for _ in range(8):
+        for _ in range(16):  # Process each bit in the word
             if crc & 0x0001:
                 crc = (crc >> 1) ^ 0x8408
             else:
@@ -48,11 +48,9 @@ def calculate_crc(data):
 
 # Function to get user command
 def get_user_command():
-    command = input("Enter a command in '[r/w] [address] [val]' or 'disconnect': ")
+    command = input("Enter a command in '[r/w] [address] [val]: ")
     parts = command.split()
-    if parts[0] == 'disconnect':
-        return 'disconnect', None, None
-    elif len(parts) == 2 and parts[0] == 'r' and is_valid_hex(parts[1]):
+    if len(parts) == 2 and parts[0] == 'r' and is_valid_hex(parts[1]):
         rw, address = parts
         return rw, address, None
     elif len(parts) == 3 and parts[0] == 'w' and is_valid_hex(parts[1]) and is_valid_hex(parts[2]):
@@ -63,18 +61,24 @@ def get_user_command():
         return None, None, None
 
 # Function to create a data packet
-def create_data_packet(rw, address, val=None):
-    header = 0xAA55
-    if rw == 'r':
-        message_type = 0x0001  # TOC to ROC Command
-        address_word = int(address, 16) & 0x7FFF  # Read flag (0) and address
-        data_word = 0x0000
-    elif rw == 'w':
-        message_type = 0x0001  # TOC to ROC Command
-        address_word = (int(address, 16) & 0x7FFF) | 0x8000  # Write flag (1) and address
-        data_word = int(val, 16)
-    crc_word = calculate_crc([header, message_type, address_word, data_word])
-    packet = struct.pack('!HHHHH', header, message_type, address_word, data_word, crc_word)
+def create_data_packet(product, rw, address, val=None):
+    if product in ["ROC", "TOC"]:
+        header = 0xAA55
+        if rw == 'r':
+            message_type = 0x0001  # TOC to ROC Command
+            address_word = int(address, 16) & 0x7FFF  # Read flag (0) and address
+            data_word = 0x0000
+        elif rw == 'w':
+            message_type = 0x0001  # TOC to ROC Command
+            address_word = (int(address, 16) & 0x7FFF) | 0x8000  # Write flag (1) and address
+            data_word = int(val, 16)
+        crc_word = calculate_crc([header, message_type, address_word, data_word])
+        packet = struct.pack('!HHHHH', header, message_type, address_word, data_word, crc_word)
+    else:
+        rw_bit = 1 if rw == 'w' else 0
+        address_bits = int(address, 16) & 0x7FFF
+        data_bits = int(val, 16) if val else 0
+        packet = struct.pack('!I', (rw_bit << 31) | (address_bits << 16) | data_bits)
     return packet
 
 # Main function to handle the client-server communication
@@ -103,13 +107,13 @@ def main():
             break
         elif rw == 'w' and address and val:
             print(f"Command: {rw}, Address: {address}, Value: {val}")
-            packet = create_data_packet(rw, address, val)
+            packet = create_data_packet(product, rw, address, val)
             client_socket.sendall(packet)
             response = client_socket.recv(1024)
             print(f"Server response: {response}")
         elif rw == 'r' and address:
             print(f"Command: {rw}, Address: {address}")
-            packet = create_data_packet(rw, address)
+            packet = create_data_packet(product, rw, address)
             client_socket.sendall(packet)
             response = client_socket.recv(1024)
             if len(response) >= 2:
