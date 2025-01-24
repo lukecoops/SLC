@@ -17,8 +17,8 @@ This script provides a client-server communication interface for interacting wit
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/lukecoops/SLCv2.git
-   cd SLCv2
+   git clone https://github.com/lukecoops/SLC.git
+   cd SLC
 ### Usage
 
 1.  **Run the script**:
@@ -74,6 +74,6 @@ Data word: 0xAB12 (43858)
 Enter a command in '[r/w] [address] [val]': w 1F34 AB12
 Command: w, Address: 1F34, Value: AB12
 Server response: Write Completed
-Enter a command in '[r/w] [address] [val]': disconnect
+Enter a command in '[r/w] [address] [val]':
 ```
 * * * * *
