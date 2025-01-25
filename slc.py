@@ -88,11 +88,7 @@ def main():
             print(f"Command: {rw}, Address: {address}, Value: {val}")
             packet = create_data_packet(product, rw, address, val)
             client_socket.sendall(packet)
-            try:
-                response = client_socket.recv(4)
-                print(f"Raw server response: {response}")
-            except socket.timeout:
-                print("Error: Server response timed out.")
+            print("Write Complete")
         elif rw == 'r' and address:
             print(f"Command: {rw}, Address: {address}")
             packet = create_data_packet(product, rw, address)
@@ -100,8 +96,8 @@ def main():
             try:
                 response = client_socket.recv(4)
                 print(f"Raw server response: {response}")
-                if len(response) >= 2:
-                    data_word = struct.unpack('<H', response[-2:])[0]  # Little-endian format
+                if len(response) >= 4:
+                    data_word = struct.unpack('<H', response[2:4])[0]  # Extract 4th byte followed by 3rd byte
                     print(f"Data word: 0x{data_word:04X} ({data_word})")
                 else:
                     print(f"Raw server response: {response}")
