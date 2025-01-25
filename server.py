@@ -20,28 +20,27 @@ while True:
 
     while True:
         # Receive data from the client
-        data = conn.recv(1024)  # Buffer size is 1024 bytes
+        data = conn.recv(4)  # Buffer size is 4 bytes
         if not data:
             break
 
         if len(data) == 4:  # Common packet structure 4 bytes
-            packet = struct.unpack('!I', data[:4])[0]
-            rw_bit = (packet >> 31) & 0x1
-            address_bits = (packet >> 16) & 0x7FFF
-            data_bits = packet & 0xFFFF
+            address_bits, data_bits = struct.unpack('<HH', data)  # Little-endian format
+            rw_bit = (address_bits >> 15) & 0x1  # Extract rw_bit from the most significant bit of address_bits
+            address_bits = address_bits & 0x7FFF  # Mask out the rw_bit
 
             print(f"Received packet: RW={rw_bit}, Address={address_bits:04X}, Data={data_bits:04X}")
 
             # Respond based on the received command
             if rw_bit == 0:
-                response = b"Write Completed"
+                response = struct.pack('<I', 0xFFFF)  # Respond with "Write Completed" in hex (little-endian)
             else:
                 if address_bits == 0x602B:  # Check if address is 0x602B
-                    response = struct.pack('!I', 0b11100000001010110000000000001111)  # Respond with 11100000001010110000000000001111
+                    response = struct.pack('!I', 0b11100000001010110000111100000000)  # Respond with 11100000001010110000000000001111
                 else:
-                    response = struct.pack('!I', 0b11100000001010110000000000000001)  # Respond with 11100000001010110000000000000001
+                    response = struct.pack('!I', 0b11100000001010110000000100000000)  # Respond with 11100000001010110000000000000001
         else:
-            response = b"Invalid Packet"
+            response = struct.pack('!I', 0xAAAA)  # Respond with "Invalid Packet" in hex (little-endian)
 
         conn.sendall(response)
     conn.close()

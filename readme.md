@@ -24,7 +24,7 @@ This script provides a client-server communication interface for interacting wit
 1.  **Run the script**:
 
    ```bash
-    python slc.py
+    python3 slc.py
 ```
 2.  **Enter product**:
    ```

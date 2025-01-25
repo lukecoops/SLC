@@ -56,8 +56,12 @@ def create_data_packet(product, rw, address, val=None):
     address_bits = int(address, 16) & 0x7FFF
     data_bits = int(val, 16) if val else 0
 
-    packet = (rw_bit << 31) | (address_bits << 16) | data_bits
-    return struct.pack('!I', packet)
+    # Combine rw_bit with address_bits
+    address_bits = (rw_bit << 15) | address_bits
+
+    # Pack address and data in little-endian format
+    packet = struct.pack('<H', address_bits) + struct.pack('<H', data_bits)
+    return packet
 
 # Main function to handle the client-server communication
 def main():
@@ -69,6 +73,7 @@ def main():
     # Connect to the server
     try:
         client_socket.connect((host, port))
+        client_socket.settimeout(5)  # Set a timeout of 5 seconds
         print(f"Connected to server at {host}:{port}")
     except socket.gaierror:
         print(f"Error: The IP address {host} cannot be found.")
@@ -83,19 +88,25 @@ def main():
             print(f"Command: {rw}, Address: {address}, Value: {val}")
             packet = create_data_packet(product, rw, address, val)
             client_socket.sendall(packet)
-            response = client_socket.recv(1024)
-            print(f"Raw server response: {response}")
+            try:
+                response = client_socket.recv(4)
+                print(f"Raw server response: {response}")
+            except socket.timeout:
+                print("Error: Server response timed out.")
         elif rw == 'r' and address:
             print(f"Command: {rw}, Address: {address}")
             packet = create_data_packet(product, rw, address)
             client_socket.sendall(packet)
-            response = client_socket.recv(1024)
-            print(f"Raw server response: {response}")
-            if len(response) >= 2:
-                data_word = struct.unpack('!H', response[-2:])[0]
-                print(f"Data word: 0x{data_word:04X} ({data_word})")
-            else:
+            try:
+                response = client_socket.recv(4)
                 print(f"Raw server response: {response}")
+                if len(response) >= 2:
+                    data_word = struct.unpack('<H', response[-2:])[0]  # Little-endian format
+                    print(f"Data word: 0x{data_word:04X} ({data_word})")
+                else:
+                    print(f"Raw server response: {response}")
+            except socket.timeout:
+                print("Error: Server response timed out.")
         else:
             print("Please enter a valid command")
 
