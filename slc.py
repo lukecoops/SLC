@@ -6,8 +6,10 @@ import time
 import os
 import csv
 from datetime import datetime
+from tkinter import Tk
+from tkinter.filedialog import askopenfilename
 
-print("BAE SYSTEMS AUSTRALIA v1.0.0") # Software Version
+print("BAE SYSTEMS AUSTRALIA SIMPLE LOCAL CONTROL v1.0.0") # Software Version
 
 # ANSI escape codes for coloured output
 RED = '\033[91m'
@@ -21,19 +23,24 @@ os.makedirs(log_dir, exist_ok=True)
 session_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
 log_file = os.path.join(log_dir, f"slc_command_log_{session_time}.csv")
 
+# Write the header to the CSV file
+with open(log_file, mode='w', newline='') as file:
+    writer = csv.writer(file)
+    writer.writerow(["Timestamp", "Message", "RW", "Address", "Value"])
+
 # Function to log messages to CSV
-def log_to_csv(timestamp, message):
+def log_to_csv(timestamp, message, rw="", address="", value=""):
     # Remove ANSI escape codes from the message
     ansi_escape = re.compile(r'\x1B[@-_][0-?]*[ -/]*[@-~]')
     message = ansi_escape.sub('', message)
     with open(log_file, mode='a', newline='') as file:
         writer = csv.writer(file)
-        writer.writerow([timestamp, message])
+        writer.writerow([timestamp, message, rw, address, value])
 
 # Function to print with timestamp and log to CSV
-def print_with_timestamp(message):
+def print_with_timestamp(message, rw="", address="", value=""):
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    log_to_csv(timestamp, message)
+    log_to_csv(timestamp, message, rw, address, value)
     print(f"[{timestamp}] {message}")
 
 # Function to get user input for product, IP address, and port
@@ -86,13 +93,37 @@ def is_valid_com_port(port):
 def is_valid_hex(value):
     return bool(re.fullmatch(r'^[0-9A-Fa-f]{1,4}$', value))
 
-# Function to get user commands
+# Function to get user commands from input or file
 def get_user_commands():
-    commands = input("Enter commands separated by ';' (e.g., 'r 1234; w 5678 9ABC'): ").strip()
+    commands = input("Enter commands separated by ';' (e.g., 'r 1234; w 5678 9ABC') or type 'file' to load from a file: ").strip()
+    if commands.lower() == 'file':
+        Tk().withdraw()  # Hide the root window
+        file_path = askopenfilename(filetypes=[("Text files", "*.txt")])
+        if not file_path:
+            print(f"{RED}No file selected.{RESET}")
+            return False, []
+        with open(file_path, 'r') as file:
+            commands = file.read().strip()
+    
+    # Remove trailing semicolon if present
+    if commands.endswith(';'):
+        commands = commands[:-1]
+    
+    if not commands:
+        print(f"{RED}Error: No commands provided.{RESET}")
+        return False, []
+
     command_list = commands.split(';')
     parsed_commands = []
     for command in command_list:
-        parts = command.strip().split()
+        command = command.strip()
+        if command.startswith('#'):
+            comment = command[1:].strip()
+            print_with_timestamp(f"Comment: {comment}")
+            continue
+        if not command:
+            continue
+        parts = command.split()
         if len(parts) == 2 and parts[0] == 'r' and is_valid_hex(parts[1]):
             rw, address = parts
             parsed_commands.append((rw, address, None))
@@ -129,7 +160,7 @@ def main():
         try:
             client_socket.settimeout(5)  # Set a timeout of 5 seconds
             client_socket.connect((host_or_com, port))
-            print(f"Connected to server at {host_or_com}:{port}")
+            print_with_timestamp(f"Connected to server at {host_or_com}:{port}")
         except socket.timeout:
             print(f"{RED}Error: Connection to {host_or_com} timed out.{RESET}")
             return
@@ -152,7 +183,7 @@ def main():
             print("-" * 50)  # Horizontal line before command results
             for rw, address, val in commands:
                 if rw == 'w' and address and val:
-                    print_with_timestamp(f"Write Complete. Address: {address}, Value: {val}")
+                    print_with_timestamp(f"Write Complete. Address: {address}, Value: {val}", rw, address, val)
                     packet = create_data_packet(product, rw, address, val)
                     client_socket.sendall(packet)
                     # Read back to verify
@@ -164,13 +195,13 @@ def main():
                         if len(response) >= 4:
                             data_word = struct.unpack('<H', response[2:4])[0]  # Extract 4th byte followed by 3rd byte
                             if data_word == int(val, 16):
-                                print_with_timestamp(f"Write Verified. Address: {address} Data: 0x{data_word:04X} ({data_word})")
+                                print_with_timestamp(f"Write Verified. Address: {address} Data: 0x{data_word:04X} ({data_word})", rw, address, val)
                             else:
-                                print_with_timestamp(f"{RED}Write Error: Different Value Read Back. Address: {address} Data: 0x{data_word:04X} ({data_word}){RESET}")
+                                print_with_timestamp(f"{RED}Write Error: Different Value Read Back. Address: {address} Data: 0x{data_word:04X} ({data_word}){RESET}", rw, address, val)
                         else:
-                            print_with_timestamp(f"Raw server response: {response}")
+                            print_with_timestamp(f"{RED}Unknown error: {response}{RESET}", rw, address, val)
                     except socket.timeout:
-                        print_with_timestamp(f"{RED}Error: Server response timed out.{RESET}")
+                        print(f"{RED}Error: Server response timed out.{RESET}")
                 elif rw == 'r' and address:
                     packet = create_data_packet(product, rw, address)
                     client_socket.sendall(packet)
@@ -179,20 +210,27 @@ def main():
                         response = client_socket.recv(4)
                         if len(response) >= 4:
                             data_word = struct.unpack('<H', response[2:4])[0]  # Extract 4th byte followed by 3rd byte
-                            print_with_timestamp(f"Read Complete. Address: {address} Data: 0x{data_word:04X} ({data_word})")
+                            print_with_timestamp(f"Read Complete. Address: {address} Data: 0x{data_word:04X} ({data_word})", rw, address)
                         else:
-                            print_with_timestamp(f"Raw server response: {response}")
+                            print_with_timestamp(f"{RED}Unknown error: {response}{RESET}", rw, address)
                     except socket.timeout:
-                        print_with_timestamp(f"{RED}Error: Server response timed out.{RESET}")
+                        print(f"{RED}Error: Server response timed out.{RESET}")
                 else:
-                    print_with_timestamp(f"{RED}Please enter a valid command{RESET}")
+                    print(f"{RED}Please enter a valid command{RESET}")
                 time.sleep(0.5)  # Delay of 0.5 seconds between commands
             print("-" * 50)  # Horizontal line after all command results
     else:
         # Create a serial connection
         try:
             ser = serial.Serial(host_or_com, 9600, timeout=1)
-            print(f"Connected to {host_or_com.upper()}")
+            # Test the connection by writing and reading a test message
+            test_message = b'\x00'
+            ser.write(test_message)
+            response = ser.read(1)
+            if response != test_message:
+                print(f"{RED}Error: No Server listening on {host_or_com.upper()}.{RESET}")
+                return
+            print_with_timestamp(f"Connected to {host_or_com.upper()}")
         except serial.SerialException as e:
             print(f"{RED}Error: Could not open COM port {host_or_com}. Details: {e}{RESET}")
             return
@@ -206,7 +244,7 @@ def main():
                 if rw == 'w' and address and val:
                     packet = create_data_packet(product, rw, address, val)
                     ser.write(packet)
-                    print_with_timestamp(f"Write Complete. Address: {address}, Value: {val}")
+                    print_with_timestamp(f"Write Complete. Address: {address}, Value: {val}", rw, address, val)
                     # Read back to verify
                     packet = create_data_packet(product, 'r', address)
                     ser.write(packet)
@@ -215,22 +253,22 @@ def main():
                     if len(response) >= 4:
                         data_word = struct.unpack('<H', response[2:4])[0]  # Extract 4th byte followed by 3rd byte
                         if data_word == int(val, 16):
-                            print_with_timestamp(f"Write Verified. Address: {address} Data: 0x{data_word:04X} ({data_word})")
+                            print_with_timestamp(f"Write Verified. Address: {address} Data: 0x{data_word:04X} ({data_word})", rw, address, val)
                         else:
-                            print_with_timestamp(f"{RED}Write Error: Different Value Read Back. Address: {address} Data: 0x{data_word:04X} ({data_word}){RESET}")
+                            print_with_timestamp(f"{RED}Write Error: Different Value Read Back. Address: {address} Data: 0x{data_word:04X} ({data_word}){RESET}", rw, address, val)
                     else:
-                        print_with_timestamp(f"Raw server response: {response}")
+                        print_with_timestamp(f"{RED}Unknown error: {response}{RESET}", rw, address, val)
                 elif rw == 'r' and address:
                     packet = create_data_packet(product, rw, address)
                     ser.write(packet)
                     response = ser.read(4)
                     if len(response) >= 4:
                         data_word = struct.unpack('<H', response[2:4])[0]  # Extract 4th byte followed by 3rd byte
-                        print_with_timestamp(f"Read Complete. Address: {address} Data: 0x{data_word:04X} ({data_word})")
+                        print_with_timestamp(f"Read Complete. Address: {address} Data: 0x{data_word:04X} ({data_word})", rw, address)
                     else:
-                        print_with_timestamp(f"Raw server response: {response}")
+                        print_with_timestamp(f"{RED}Unknown error: {response}{RESET}", rw, address)
                 else:
-                    print_with_timestamp(f"{RED}Please enter a valid command{RESET}")
+                    print(f"{RED}Please enter a valid command{RESET}")
                 time.sleep(0.5)  # Delay of 0.5 seconds between commands
             print("-" * 50)  # Horizontal line after all command results
 
