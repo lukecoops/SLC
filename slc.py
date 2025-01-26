@@ -124,6 +124,7 @@ def main():
                     # Read back to verify
                     packet = create_data_packet(product, 'r', address)
                     client_socket.sendall(packet)
+                    time.sleep(0.1)  # Small delay before reading the response
                     try:
                         response = client_socket.recv(4)
                         if len(response) >= 4:
@@ -139,6 +140,7 @@ def main():
                 elif rw == 'r' and address:
                     packet = create_data_packet(product, rw, address)
                     client_socket.sendall(packet)
+                    time.sleep(0.1)  # Small delay before reading the response
                     try:
                         response = client_socket.recv(4)
                         if len(response) >= 4:
@@ -174,6 +176,7 @@ def main():
                     # Read back to verify
                     packet = create_data_packet(product, 'r', address)
                     ser.write(packet)
+                    time.sleep(0.1)  # Small delay before reading the response
                     response = ser.read(4)
                     if len(response) >= 4:
                         data_word = struct.unpack('<H', response[2:4])[0]  # Extract 4th byte followed by 3rd byte
