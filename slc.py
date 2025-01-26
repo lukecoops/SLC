@@ -6,6 +6,10 @@ import time
 
 print("BAE Systems Australia SLC v1.0.0") # Software Version
 
+# ANSI escape codes for coloured output
+RED = '\033[91m'
+RESET = '\033[0m'
+
 # Function to get user input for product, IP address, and port
 def get_user_input():
     valid_products = ["DRX", "TOC", "ROC", "DWG"]
@@ -14,7 +18,7 @@ def get_user_input():
         if product in valid_products:
             break
         else:
-            print("Invalid product. Please enter one of the following: DRx, TOC, ROC, DWG.")
+            print(f"{RED}Invalid product. Please enter one of the following: DRx, TOC, ROC, DWG.{RESET}")
     
     while True:
         address = input("Enter IP Address or COM port: ").strip()
@@ -27,7 +31,7 @@ def get_user_input():
                     port = int(port)
                     break
                 else:
-                    print("Invalid port format. Please enter a number between 1 and 65535.")
+                    print(f"{RED}Invalid port format. Please enter a number between 1 and 65535.{RESET}")
             return product, connection_type, ip_address, port
         elif is_valid_com_port(address):
             connection_type = "com"
@@ -36,9 +40,9 @@ def get_user_input():
                 serial.Serial(com_port)
                 return product, connection_type, com_port, None
             except serial.SerialException as e:
-                print(f"Error: Could not open COM port {com_port}. Details: {e}")
+                print(f"{RED}Error: Could not open COM port {com_port}. Details: {e}{RESET}")
         else:
-            print("Invalid input. Please enter a valid IP address or COM port.")
+            print(f"{RED}Invalid input. Please enter a valid IP address or COM port.{RESET}")
 
 # Function to validate IP address
 def is_valid_ip(ip):
@@ -70,7 +74,7 @@ def get_user_commands():
             rw, address, val = parts
             parsed_commands.append((rw, address, val))
         else:
-            print(f"Invalid command format: {command}. The first argument must be 'r' or 'w'. The second and third arguments must be 16-bit hexadecimal values.")
+            print(f"{RED}Invalid command format: {command}. The first argument must be 'r' or 'w'. The second and third arguments must be 16-bit hexadecimal values.{RESET}")
             return False, []
     return True, parsed_commands
 
@@ -101,72 +105,97 @@ def main():
             client_socket.settimeout(5)  # Set a timeout of 5 seconds
             print(f"Connected to server at {host_or_com}:{port}")
         except socket.gaierror:
-            print(f"Error: The IP address {host_or_com} cannot be found.")
+            print(f"{RED}Error: The IP address {host_or_com} cannot be found.{RESET}")
             return
         except socket.error as e:
-            print(f"Error: The IP address {host_or_com} is in use or cannot be connected to. Details: {e}")
+            print(f"{RED}Error: The IP address {host_or_com} is in use or cannot be connected to. Details: {e}{RESET}")
             return
 
         while True:
             valid, commands = get_user_commands()
             if not valid:
                 continue
+            print("-" * 50)  # Horizontal line before command results
             for rw, address, val in commands:
                 if rw == 'w' and address and val:
-                    print(f"Command: {rw}, Address: {address}, Value: {val}")
+                    print(f"Write Complete. Address: {address}, Value: {val}")
                     packet = create_data_packet(product, rw, address, val)
                     client_socket.sendall(packet)
-                    print("Write Complete")
+                    # Read back to verify
+                    packet = create_data_packet(product, 'r', address)
+                    client_socket.sendall(packet)
+                    try:
+                        response = client_socket.recv(4)
+                        if len(response) >= 4:
+                            data_word = struct.unpack('<H', response[2:4])[0]  # Extract 4th byte followed by 3rd byte
+                            if data_word == int(val, 16):
+                                print(f"Write Verified. Address: {address} Data: 0x{data_word:04X} ({data_word})")
+                            else:
+                                print(f"{RED}Write Error: Different Value Read Back. Address: {address} Data: 0x{data_word:04X} ({data_word}){RESET}")
+                        else:
+                            print(f"Raw server response: {response}")
+                    except socket.timeout:
+                        print(f"{RED}Error: Server response timed out.{RESET}")
                 elif rw == 'r' and address:
-                    print(f"Command: {rw}, Address: {address}")
                     packet = create_data_packet(product, rw, address)
                     client_socket.sendall(packet)
                     try:
                         response = client_socket.recv(4)
-                        print(f"Raw server response: {response}")
                         if len(response) >= 4:
                             data_word = struct.unpack('<H', response[2:4])[0]  # Extract 4th byte followed by 3rd byte
-                            print(f"Data word: 0x{data_word:04X} ({data_word})")
+                            print(f"Read Complete. Address: {address} Data: 0x{data_word:04X} ({data_word})")
                         else:
                             print(f"Raw server response: {response}")
                     except socket.timeout:
-                        print("Error: Server response timed out.")
+                        print(f"{RED}Error: Server response timed out.{RESET}")
                 else:
-                    print("Please enter a valid command")
+                    print(f"{RED}Please enter a valid command{RESET}")
                 time.sleep(0.5)  # Delay of 0.5 seconds between commands
+            print("-" * 50)  # Horizontal line after all command results
     else:
         # Create a serial connection
         try:
             ser = serial.Serial(host_or_com, 9600, timeout=1)
             print(f"Connected to {host_or_com}")
         except serial.SerialException as e:
-            print(f"Error: Could not open COM port {host_or_com}. Details: {e}")
+            print(f"{RED}Error: Could not open COM port {host_or_com}. Details: {e}{RESET}")
             return
 
         while True:
             valid, commands = get_user_commands()
             if not valid:
                 continue
+            print("-" * 50)  # Horizontal line before command results
             for rw, address, val in commands:
                 if rw == 'w' and address and val:
-                    print(f"Command: {rw}, Address: {address}, Value: {val}")
                     packet = create_data_packet(product, rw, address, val)
                     ser.write(packet)
-                    print("Write Complete")
+                    print(f"Write Complete. Address: {address}, Value: {val}")
+                    # Read back to verify
+                    packet = create_data_packet(product, 'r', address)
+                    ser.write(packet)
+                    response = ser.read(4)
+                    if len(response) >= 4:
+                        data_word = struct.unpack('<H', response[2:4])[0]  # Extract 4th byte followed by 3rd byte
+                        if data_word == int(val, 16):
+                            print(f"Write Verified. Address: {address} Data: 0x{data_word:04X} ({data_word})")
+                        else:
+                            print(f"{RED}Write Error: Different Value Read Back. Address: {address} Data: 0x{data_word:04X} ({data_word}){RESET}")
+                    else:
+                        print(f"Raw server response: {response}")
                 elif rw == 'r' and address:
-                    print(f"Command: {rw}, Address: {address}")
                     packet = create_data_packet(product, rw, address)
                     ser.write(packet)
                     response = ser.read(4)
-                    print(f"Raw server response: {response}")
                     if len(response) >= 4:
                         data_word = struct.unpack('<H', response[2:4])[0]  # Extract 4th byte followed by 3rd byte
-                        print(f"Data word: 0x{data_word:04X} ({data_word})")
+                        print(f"Read Complete. Address: {address} Data: 0x{data_word:04X} ({data_word})")
                     else:
                         print(f"Raw server response: {response}")
                 else:
-                    print("Please enter a valid command")
+                    print(f"{RED}Please enter a valid command{RESET}")
                 time.sleep(0.5)  # Delay of 0.5 seconds between commands
+            print("-" * 50)  # Horizontal line after all command results
 
 if __name__ == "__main__":
     main()
