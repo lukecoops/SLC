@@ -1,6 +1,7 @@
 import socket
 import struct
 import serial
+import time
 
 # Function to handle network communication
 def handle_network_communication():
