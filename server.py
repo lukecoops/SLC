@@ -35,17 +35,16 @@ def handle_network_communication():
                 print(f"Received packet: RW={rw_bit}, Address={address_bits:04X}, Data={data_bits:04X}")
 
                 # Respond based on the received command
-                if rw_bit == 0:
-                    response = struct.pack('<I', 0xFFFF)  # Respond with "Write Completed" in hex (little-endian)
-                else:
+                if rw_bit == 1:  # Read command
                     if address_bits == 0x602B:  # Check if address is 0x602B
                         response = struct.pack('!I', 0b11100000001010110000111100000000)  # Respond with 11100000001010110000000000001111
                     else:
                         response = struct.pack('!I', 0b11100000001010110000000100000000)  # Respond with 11100000001010110000000000000001
+                    conn.sendall(response)
+                # No response for write command
             else:
                 response = struct.pack('!I', 0xAAAA)  # Respond with "Invalid Packet" in hex (little-endian)
-
-            conn.sendall(response)
+                conn.sendall(response)
         conn.close()
 
 # Function to handle serial communication
@@ -67,17 +66,16 @@ def handle_serial_communication():
             print(f"Received packet: RW={rw_bit}, Address={address_bits:04X}, Data={data_bits:04X}")
 
             # Respond based on the received command
-            if rw_bit == 0:
-                response = struct.pack('<I', 0xFFFF)  # Respond with "Write Completed" in hex (little-endian)
-            else:
+            if rw_bit == 1:  # Read command
                 if address_bits == 0x602B:  # Check if address is 0x602B
                     response = struct.pack('!I', 0b11100000001010110000111100000000)  # Respond with 11100000001010110000000000001111
                 else:
                     response = struct.pack('!I', 0b11100000001010110000000100000000)  # Respond with 11100000001010110000000000000001
+                ser.write(response)
+            # No response for write command
         else:
             response = struct.pack('!I', 0xAAAA)  # Respond with "Invalid Packet" in hex (little-endian)
-
-        ser.write(response)
+            ser.write(response)
 
 if __name__ == "__main__":
     connection_type = input("Enter connection type (network/com): ").strip().lower()
