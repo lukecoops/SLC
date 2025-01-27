@@ -2,78 +2,106 @@
 
 ## Overview
 
-This script provides a client-server communication interface for interacting with BAE peoducts (DRx, TOC, ROC and DWG). It supports reading and writing operations using a structured command format over TCP sockets.
+The **Simple Local Control (SLC)** software is a command-line tool designed to facilitate communication with hardware devices via TCP/IP or serial COM ports. It provides a simple interface for sending commands to read or write data from/to hardware registers, as well as logging the communication session.
+
+### Features
+- **Multi-connection support**: Communicates via TCP/IP (network) or serial COM ports.
+- **Command flexibility**: Supports read/write commands, delays, continuous data transmission, and command aliasing.
+- **Extensive logging**: Logs all communication data into a timestamped CSV file for easy review.
+
+- **Customizable configuration**: Uses a `config.ini` file for pre-loading settings and aliases.
 
 ---
 
-## Getting Started
+## Compatibility
 
-### Prerequisites
+- Cross-platform support for Windows and Linux
 
-- Python
-- Computer on the same network as product
+---
 
-### Installation
+## How to Use
 
-1. Clone the repository:
+1. **Run the Script**
    ```bash
-   git clone https://github.com/lukecoops/SLC.git
-   cd SLC
-### Usage
-
-1.  **Run the script**:
-
-   ```bash
-    python3 slc.py
-```
-2.  **Enter product**:
+   ./slc.exe
    ```
-    Enter one of the following products: `DRX`, `TOC`, `ROC`, `DWG`: 
+   Upon launch, the software will display the software version and start an interactive session.
+
+2. **Configuration Setup** (Optional)
+   - Create a `config.ini` file in the same directory to pre-configure settings:
+     ```
+     product=TOC
+     address=192.168.1.100
+     port=10001
+     alias_read_all=r 0000; r 0001; r 0002
+     ```
+   - `product`: The product type (e.g., `TOC` or `ROC`).
+   - `address`: IP address or COM port.
+   - `port`: Port number (if applicable).
+   - `alias_*`: Command aliases for frequently used sequences.
+
+3. **Interactive Commands**
+   - **Read Command**: `r <address>`
+   - **Write Command**: `w <address> <value>`
+   - **Delay Command**: `delay=<seconds>`
+   - **Load Command from File**: `<filename>.txt`
+   - **Continuous Transmission**: `cont`
+   - **Comments**: Add `#` at the beginning of a line for comments.
+
+4. **Example Commands**
+   - Single read: `r 1234`
+   - Write a value: `w 5678 ABCD`
+   - Continuous sending: `cont`
+   - Use delay: `r 1234; delay=2; r 5678`
+   - Alias from config: `alias_read_all`
+   - Load from file commands.txt: `commands`
+
+5. **Exit Continuous Mode**
+   - Press `Q` at any time to stop continuous transmissions.
+
+---
+
+## Logs
+
+Logs are saved in the `SLC_LOG` directory as CSV files. The filename format is:
 ```
-3.  **Provide IP address and port**:
-    ```
-    IP Address:
-    Port:
-4.  **Enter a command**:
-
-    -   Read Command:
-
-        `r [address]`
-
-        Example:
-
-        `r 1F34`
-
-    -   Write Command:
-
-        `w [address] [val]`
-
-        Example:
-
-        `w 1F34 AB12`
-
-
-Command Format
---------------
-
--   `r [address]`: Reads data from the specified 16-bit hexadecimal address.
--   `w [address] [value]`: Writes a 16-bit hexadecimal value to the specified address.
-
-**Note**: Both `address` and `value` must be valid 16-bit hexadecimal values (e.g., `1F34`, `AB12`).
-
-* * * * *
-Example Interaction
--------------------
+slc_command_log_<YYYY-MM-DD_HH-MM-SS>.csv
 ```
-BAE Systems Australia SLC v1.0.0
-Enter Product (DRX, TOC, ROC, DWG): TOC
-Connected to server at 127.0.0.1:65432
-Enter a command in '[r/w] [address] [val]': r 1F34
-Command: r, Address: 1F34
-Data word: 0xAB12 (43858)
-Enter a command in '[r/w] [address] [val]': w 1F34 AB12
-Command: w, Address: 1F34, Value: AB12
-Server response: Write Completed
-Enter a command in '[r/w] [address] [val]':
+### Log Format
+| Timestamp           | Message                        | RW   | Address | Value |
+|---------------------|--------------------------------|------|---------|-------|
+| 2025-01-27 10:30:00 | Read Complete. Address: 1234  | r    | 1234    |       |
+| 2025-01-27 10:31:00 | Write Verified. Address: 5678 | w    | 5678    | ABCD  |
+
+---
+
+## Key Features in Detail
+
+### Input Validation
+- Validates IP addresses, COM port names, and hexadecimal values (16-bit).
+- Ensures valid port numbers (1-65535).
+
+
+### Error Handling
+- Detects and logs socket timeouts, connection errors, and permission issues when writing logs.
+
+### Command Aliases
+- Allows defining shortcuts for complex or repetitive command sequences in `config.ini`.
+
+### Key Press Detection
+- Press `Q` to interrupt continuous commands or exit continuous send mode.
+
+---
+
+## Configuration File Example: `config.ini`
+
+```ini
+# General Configuration
+product=TOC
+address=192.168.1.100
+port=10001
+
+# Command Aliases
+alias_read_all=r 0000; r 0001; r 0002
+alias_write_all=w 1234 ABCD; w 5678 9ABC
 ```
-* * * * *
