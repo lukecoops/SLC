@@ -326,9 +326,9 @@ def main():
                     else:
                         print(f"{RED}Please enter a valid command{RESET}")
                     time.sleep(0.5)  # Delay of 0.5 seconds between commands
-                if continuous_flag:
-                    if check_key_press():
+                    if continuous_flag and check_key_press():
                         print("Continuous send stopped.")
+                        continuous_flag = False
                         break
                 if not continuous_flag:
                     break
@@ -391,9 +391,9 @@ def main():
                     else:
                         print(f"{RED}Please enter a valid command{RESET}")
                     time.sleep(0.5)  # Delay of 0.5 seconds between commands
-                if continuous_flag:
-                    if check_key_press():
+                    if continuous_flag and check_key_press():
                         print("Continuous send stopped.")
+                        continuous_flag = False
                         break
                 if not continuous_flag:
                     break
