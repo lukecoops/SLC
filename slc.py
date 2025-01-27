@@ -228,6 +228,20 @@ def check_key_press():
             return key.lower() == 'c'
         return False
 
+# Function to check for key press in Linux
+def check_key_press_linux():
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        dr, dw, de = select.select([sys.stdin], [], [], 0)
+        if dr:
+            key = sys.stdin.read(1)
+            return key.lower() == 'c'
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    return False
+
 # Main function to handle the client-server communication
 def main():
     product, connection_type, address, port = get_user_input()
@@ -306,9 +320,14 @@ def main():
                         print(f"{RED}Please enter a valid command{RESET}")
                     time.sleep(0.5)  # Delay of 0.5 seconds between commands
                 if continuous_flag:
-                    if check_key_press():
-                        print("Continuous send stopped.")
-                        break
+                    if os.name == 'nt':
+                        if check_key_press():
+                            print("Continuous send stopped.")
+                            break
+                    else:
+                        if check_key_press_linux():
+                            print("Continuous send stopped.")
+                            break
                 if not continuous_flag:
                     break
             print("-" * 50)  # Horizontal line after all command results
@@ -371,9 +390,14 @@ def main():
                         print(f"{RED}Please enter a valid command{RESET}")
                     time.sleep(0.5)  # Delay of 0.5 seconds between commands
                 if continuous_flag:
-                    if check_key_press():
-                        print("Continuous send stopped.")
-                        break
+                    if os.name == 'nt':
+                        if check_key_press():
+                            print("Continuous send stopped.")
+                            break
+                    else:
+                        if check_key_press_linux():
+                            print("Continuous send stopped.")
+                            break
                 if not continuous_flag:
                     break
             print("-" * 50)  # Horizontal line after all command results
