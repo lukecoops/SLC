@@ -5,11 +5,20 @@ import serial
 import time
 import os
 import csv
-from datetime import datetime
-from tkinter import Tk
-from tkinter.filedialog import askopenfilename
+from datetime import datetime, timedelta, timezone
+import sys
+import select
 
-print("BAE SYSTEMS AUSTRALIA SIMPLE LOCAL CONTROL v1.0.0") # Software Version
+# Import msvcrt for detecting key presses on Windows
+if os.name == 'nt':
+    import msvcrt
+else:
+    import termios
+    import tty
+
+# Software Version
+software_version = "v1.0.0"
+print(f"BAE SYSTEMS AUSTRALIA SIMPLE LOCAL CONTROL {software_version}") # Software Version
 
 # ANSI escape codes for coloured output
 RED = '\033[91m'
@@ -20,7 +29,7 @@ log_dir = "SLC_LOG"
 os.makedirs(log_dir, exist_ok=True)
 
 # Generate a unique log file name based on the current date and time
-session_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+session_time = datetime.now(timezone(timedelta(hours=10.5))).strftime('%Y-%m-%d_%H-%M-%S')  # Adelaide time
 log_file = os.path.join(log_dir, f"slc_command_log_{session_time}.csv")
 
 # Write the header to the CSV file
@@ -33,25 +42,28 @@ def log_to_csv(timestamp, message, rw="", address="", value=""):
     # Remove ANSI escape codes from the message
     ansi_escape = re.compile(r'\x1B[@-_][0-?]*[ -/]*[@-~]')
     message = ansi_escape.sub('', message)
-    with open(log_file, mode='a', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow([timestamp, message, rw, address, value])
+    try:
+        with open(log_file, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([timestamp, message, rw, address, value])
+    except PermissionError:
+        print(f"{RED}Error: Permission denied when writing to {log_file}.{RESET}")
 
 # Function to print with timestamp and log to CSV
 def print_with_timestamp(message, rw="", address="", value=""):
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    timestamp = datetime.now(timezone(timedelta(hours=10.5))).strftime('%Y-%m-%d %H:%M:%S')  # Adelaide time
     log_to_csv(timestamp, message, rw, address, value)
     print(f"[{timestamp}] {message}")
 
 # Function to get user input for product, IP address, and port
 def get_user_input():
-    valid_products = ["DRX", "TOC", "ROC", "DWG"]
+    valid_products = ["TOC", "ROC"]
     while True:
-        product = input("Enter Product (DRx, TOC, ROC, DWG): ").strip().upper()
+        product = input("Enter Product (TOC, ROC): ").strip().upper()
         if product in valid_products:
             break
         else:
-            print(f"{RED}Invalid product. Please enter one of the following: DRx, TOC, ROC, DWG.{RESET}")
+            print(f"{RED}Invalid product. Please enter one of the following: TOC, ROC.{RESET}")
     
     while True:
         address = input("Enter IP Address or COM port: ").strip()
@@ -59,7 +71,7 @@ def get_user_input():
             connection_type = "network"
             ip_address = address
             while True:
-                port = input("Enter port number: ").strip()
+                port = input("Enter port number (usually 10001): ").strip()
                 if port.isdigit() and 0 < int(port) < 65536:
                     port = int(port)
                     break
@@ -95,45 +107,66 @@ def is_valid_hex(value):
 
 # Function to get user commands from input or file
 def get_user_commands():
-    commands = input("Enter commands separated by ';' (e.g., 'r 1234; w 5678 9ABC') or type 'file' to load from a file: ").strip()
-    if commands.lower() == 'file':
-        Tk().withdraw()  # Hide the root window
-        file_path = askopenfilename(filetypes=[("Text files", "*.txt")])
-        if not file_path:
-            print(f"{RED}No file selected.{RESET}")
-            return False, []
-        with open(file_path, 'r') as file:
-            commands = file.read().strip()
-    
-    # Remove trailing semicolon if present
-    if commands.endswith(';'):
-        commands = commands[:-1]
-    
-    if not commands:
-        print(f"{RED}Error: No commands provided.{RESET}")
-        return False, []
-
-    command_list = commands.split(';')
-    parsed_commands = []
-    for command in command_list:
-        command = command.strip()
-        if command.startswith('#'):
-            comment = command[1:].strip()
-            print_with_timestamp(f"Comment: {comment}")
+    while True:
+        commands = input("Enter commands separated by ';' (or help): ").strip()
+        if commands.lower() == "help":
+            print("Command format:")
+            print("  Read: r <address>")
+            print("  Write: w <address> <value>")
+            print("  Delay: delay=<seconds>")
+            print("  Continuous transmission: cont")
+            print("  Load from file: <filename without extension>.txt")
+            print("  Comments: #<comment>")
+            print("Example: r 1234; w 5678 9ABC; delay=2; cont")
             continue
-        if not command:
-            continue
-        parts = command.split()
-        if len(parts) == 2 and parts[0] == 'r' and is_valid_hex(parts[1]):
-            rw, address = parts
-            parsed_commands.append((rw, address, None))
-        elif len(parts) == 3 and parts[0] == 'w' and is_valid_hex(parts[1]) and is_valid_hex(parts[2]):
-            rw, address, val = parts
-            parsed_commands.append((rw, address, val))
-        else:
-            print(f"{RED}Invalid command format: {command}. The first argument must be 'r' or 'w'. The second and third arguments must be 16-bit hexadecimal values.{RESET}")
-            return False, []
-    return True, parsed_commands
+        
+        # Remove trailing semicolon if present
+        if commands.endswith(';'):
+            commands = commands[:-1]
+        
+        command_list = commands.split(';')
+        parsed_commands = []
+        continuous_flag = False
+        for command in command_list:
+            command = command.strip()
+            if command.endswith('.txt'):
+                file_name = command
+            else:
+                file_name = command + ".txt"
+            if os.path.isfile(file_name):
+                with open(file_name, 'r') as file:
+                    file_commands = file.read().strip()
+                if file_commands.endswith(';'):
+                    file_commands = file_commands[:-1]
+                command_list.extend(file_commands.split(';'))
+                continue
+            if command.startswith('#'):
+                comment = command[1:].strip()
+                print_with_timestamp(f"Comment: {comment}")
+                continue
+            if command.startswith('delay='):
+                try:
+                    delay = float(command.split('=')[1])
+                    parsed_commands.append(('delay', delay))
+                except ValueError:
+                    print(f"{RED}Invalid delay format: {command}. Use delay=xx where xx is the number of seconds.{RESET}")
+                continue
+            if command == 'cont':
+                continuous_flag = True
+                continue
+            if not command:
+                continue
+            parts = command.split()
+            if len(parts) == 2 and parts[0] == 'r' and is_valid_hex(parts[1]):
+                rw, address = parts
+                parsed_commands.append((rw, address, None))
+            elif len(parts) == 3 and parts[0] == 'w' and is_valid_hex(parts[1]) and is_valid_hex(parts[2]):
+                rw, address, val = parts
+                parsed_commands.append((rw, address, val))
+            else:
+                print(f"{RED}Invalid command format: {command}. The first argument must be 'r' or 'w'. The second and third arguments must be 16-bit hexadecimal values.{RESET}")
+                return False, []
+        return True, parsed_commands, continuous_flag
 
 # Function to create a data packet
 def create_data_packet(product, rw, address, val=None):
@@ -148,6 +181,17 @@ def create_data_packet(product, rw, address, val=None):
     packet = struct.pack('<H', address_bits) + struct.pack('<H', data_bits)
     return packet
 
+# Function to check for key press
+def check_key_press():
+    if os.name == 'nt':
+        return msvcrt.kbhit() and msvcrt.getch().decode('utf-8').lower() == 'c'
+    else:
+        dr, dw, de = select.select([sys.stdin], [], [], 0)
+        if dr:
+            key = sys.stdin.read(1)
+            return key.lower() == 'c'
+        return False
+
 # Main function to handle the client-server communication
 def main():
     product, connection_type, host_or_com, port = get_user_input()
@@ -160,7 +204,7 @@ def main():
         try:
             client_socket.settimeout(5)  # Set a timeout of 5 seconds
             client_socket.connect((host_or_com, port))
-            print_with_timestamp(f"Connected to server at {host_or_com}:{port}")
+            print(f"Connected to server at {host_or_com}:{port}")
         except socket.timeout:
             print(f"{RED}Error: Connection to {host_or_com} timed out.{RESET}")
             return
@@ -177,47 +221,60 @@ def main():
             return
 
         while True:
-            valid, commands = get_user_commands()
+            valid, commands, continuous_flag = get_user_commands()
             if not valid:
                 continue
             print("-" * 50)  # Horizontal line before command results
-            for rw, address, val in commands:
-                if rw == 'w' and address and val:
-                    print_with_timestamp(f"Write Complete. Address: {address}, Value: {val}", rw, address, val)
-                    packet = create_data_packet(product, rw, address, val)
-                    client_socket.sendall(packet)
-                    # Read back to verify
-                    packet = create_data_packet(product, 'r', address)
-                    client_socket.sendall(packet)
-                    time.sleep(0.1)  # Small delay before reading the response
-                    try:
-                        response = client_socket.recv(4)
-                        if len(response) >= 4:
-                            data_word = struct.unpack('<H', response[2:4])[0]  # Extract 4th byte followed by 3rd byte
-                            if data_word == int(val, 16):
-                                print_with_timestamp(f"Write Verified. Address: {address} Data: 0x{data_word:04X} ({data_word})", rw, address, val)
+            if continuous_flag:
+                print("Continuous send enabled. Press 'C' to cancel.")
+            while True:
+                for command in commands:
+                    if command[0] == 'delay':
+                        time.sleep(command[1])
+                        continue
+                    rw, address, val = command
+                    if rw == 'w' and address and val:
+                        print_with_timestamp(f"Write Complete. Address: {address}, Value: {val}", rw, address, val)
+                        packet = create_data_packet(product, rw, address, val)
+                        client_socket.sendall(packet)
+                        # Read back to verify
+                        packet = create_data_packet(product, 'r', address)
+                        client_socket.sendall(packet)
+                        time.sleep(0.1)  # Small delay before reading the response
+                        try:
+                            response = client_socket.recv(4)
+                            if len(response) >= 4:
+                                data_word = struct.unpack('<H', response[2:4])[0]  # Extract 4th byte followed by 3rd byte
+                                if data_word == int(val, 16):
+                                    print_with_timestamp(f"Write Verified. Address: {address} Data: 0x{data_word:04X} ({data_word})", 'r', address, val)
+                                else:
+                                    print_with_timestamp(f"{RED}Write Error: Different Value Read Back. Address: {address} Data: 0x{data_word:04X} ({data_word}){RESET}", 'r', address, val)
                             else:
-                                print_with_timestamp(f"{RED}Write Error: Different Value Read Back. Address: {address} Data: 0x{data_word:04X} ({data_word}){RESET}", rw, address, val)
-                        else:
-                            print_with_timestamp(f"{RED}Unknown error: {response}{RESET}", rw, address, val)
-                    except socket.timeout:
-                        print(f"{RED}Error: Server response timed out.{RESET}")
-                elif rw == 'r' and address:
-                    packet = create_data_packet(product, rw, address)
-                    client_socket.sendall(packet)
-                    time.sleep(0.1)  # Small delay before reading the response
-                    try:
-                        response = client_socket.recv(4)
-                        if len(response) >= 4:
-                            data_word = struct.unpack('<H', response[2:4])[0]  # Extract 4th byte followed by 3rd byte
-                            print_with_timestamp(f"Read Complete. Address: {address} Data: 0x{data_word:04X} ({data_word})", rw, address)
-                        else:
-                            print_with_timestamp(f"{RED}Unknown error: {response}{RESET}", rw, address)
-                    except socket.timeout:
-                        print(f"{RED}Error: Server response timed out.{RESET}")
-                else:
-                    print(f"{RED}Please enter a valid command{RESET}")
-                time.sleep(0.5)  # Delay of 0.5 seconds between commands
+                                print(f"{RED}Unknown error: {response}{RESET}")
+                        except socket.timeout:
+                            print(f"{RED}Error: Server response timed out.{RESET}")
+                    elif rw == 'r' and address:
+                        packet = create_data_packet(product, rw, address)
+                        client_socket.sendall(packet)
+                        time.sleep(0.1)  # Small delay before reading the response
+                        try:
+                            response = client_socket.recv(4)
+                            if len(response) >= 4:
+                                data_word = struct.unpack('<H', response[2:4])[0]  # Extract 4th byte followed by 3rd byte
+                                print_with_timestamp(f"Read Complete. Address: {address} Data: 0x{data_word:04X} ({data_word})", rw, address)
+                            else:
+                                print(f"{RED}Unknown error: {response}{RESET}")
+                        except socket.timeout:
+                            print(f"{RED}Error: Server response timed out.{RESET}")
+                    else:
+                        print(f"{RED}Please enter a valid command{RESET}")
+                    time.sleep(0.5)  # Delay of 0.5 seconds between commands
+                if continuous_flag:
+                    if check_key_press():
+                        print("Continuous send stopped.")
+                        break
+                if not continuous_flag:
+                    break
             print("-" * 50)  # Horizontal line after all command results
     else:
         # Create a serial connection
@@ -230,46 +287,59 @@ def main():
             if response != test_message:
                 print(f"{RED}Error: No Server listening on {host_or_com.upper()}.{RESET}")
                 return
-            print_with_timestamp(f"Connected to {host_or_com.upper()}")
+            print(f"Connected to {host_or_com.upper()}")
         except serial.SerialException as e:
             print(f"{RED}Error: Could not open COM port {host_or_com}. Details: {e}{RESET}")
             return
 
         while True:
-            valid, commands = get_user_commands()
+            valid, commands, continuous_flag = get_user_commands()
             if not valid:
                 continue
             print("-" * 50)  # Horizontal line before command results
-            for rw, address, val in commands:
-                if rw == 'w' and address and val:
-                    packet = create_data_packet(product, rw, address, val)
-                    ser.write(packet)
-                    print_with_timestamp(f"Write Complete. Address: {address}, Value: {val}", rw, address, val)
-                    # Read back to verify
-                    packet = create_data_packet(product, 'r', address)
-                    ser.write(packet)
-                    time.sleep(0.1)  # Small delay before reading the response
-                    response = ser.read(4)
-                    if len(response) >= 4:
-                        data_word = struct.unpack('<H', response[2:4])[0]  # Extract 4th byte followed by 3rd byte
-                        if data_word == int(val, 16):
-                            print_with_timestamp(f"Write Verified. Address: {address} Data: 0x{data_word:04X} ({data_word})", rw, address, val)
+            if continuous_flag:
+                print("Continuous send enabled. Press 'C' to cancel.")
+            while True:
+                for command in commands:
+                    if command[0] == 'delay':
+                        time.sleep(command[1])
+                        continue
+                    rw, address, val = command
+                    if rw == 'w' and address and val:
+                        packet = create_data_packet(product, rw, address, val)
+                        ser.write(packet)
+                        print_with_timestamp(f"Write Complete. Address: {address}, Value: {val}", rw, address, val)
+                        # Read back to verify
+                        packet = create_data_packet(product, 'r', address)
+                        ser.write(packet)
+                        time.sleep(0.1)  # Small delay before reading the response
+                        response = ser.read(4)
+                        if len(response) >= 4:
+                            data_word = struct.unpack('<H', response[2:4])[0]  # Extract 4th byte followed by 3rd byte
+                            if data_word == int(val, 16):
+                                print_with_timestamp(f"Write Verified. Address: {address} Data: 0x{data_word:04X} ({data_word})", 'r', address, val)
+                            else:
+                                print_with_timestamp(f"{RED}Write Error: Different Value Read Back. Address: {address} Data: 0x{data_word:04X} ({data_word}){RESET}", 'r', address, val)
                         else:
-                            print_with_timestamp(f"{RED}Write Error: Different Value Read Back. Address: {address} Data: 0x{data_word:04X} ({data_word}){RESET}", rw, address, val)
+                            print(f"{RED}Unknown error: {response}{RESET}")
+                    elif rw == 'r' and address:
+                        packet = create_data_packet(product, rw, address)
+                        ser.write(packet)
+                        response = ser.read(4)
+                        if len(response) >= 4:
+                            data_word = struct.unpack('<H', response[2:4])[0]  # Extract 4th byte followed by 3rd byte
+                            print_with_timestamp(f"Read Complete. Address: {address} Data: 0x{data_word:04X} ({data_word})", rw, address)
+                        else:
+                            print(f"{RED}Unknown error: {response}{RESET}")
                     else:
-                        print_with_timestamp(f"{RED}Unknown error: {response}{RESET}", rw, address, val)
-                elif rw == 'r' and address:
-                    packet = create_data_packet(product, rw, address)
-                    ser.write(packet)
-                    response = ser.read(4)
-                    if len(response) >= 4:
-                        data_word = struct.unpack('<H', response[2:4])[0]  # Extract 4th byte followed by 3rd byte
-                        print_with_timestamp(f"Read Complete. Address: {address} Data: 0x{data_word:04X} ({data_word})", rw, address)
-                    else:
-                        print_with_timestamp(f"{RED}Unknown error: {response}{RESET}", rw, address)
-                else:
-                    print(f"{RED}Please enter a valid command{RESET}")
-                time.sleep(0.5)  # Delay of 0.5 seconds between commands
+                        print(f"{RED}Please enter a valid command{RESET}")
+                    time.sleep(0.5)  # Delay of 0.5 seconds between commands
+                if continuous_flag:
+                    if check_key_press():
+                        print("Continuous send stopped.")
+                        break
+                if not continuous_flag:
+                    break
             print("-" * 50)  # Horizontal line after all command results
 
 if __name__ == "__main__":
