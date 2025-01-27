@@ -1,7 +1,6 @@
 import socket
 import re
 import struct
-import serial
 import time
 import os
 import csv
@@ -12,6 +11,7 @@ import select
 # Import msvcrt for detecting key presses on Windows
 if os.name == 'nt':
     import msvcrt
+    import serial
 else:
     import termios
     import tty
@@ -22,6 +22,7 @@ print(f"BAE SYSTEMS AUSTRALIA SIMPLE LOCAL CONTROL {software_version}") # Softwa
 
 # ANSI escape codes for coloured output
 RED = '\033[91m'
+YELLOW = '\033[93m'
 RESET = '\033[0m'
 
 # Ensure the SLC_LOG directory exists
@@ -55,39 +56,63 @@ def print_with_timestamp(message, rw="", address="", value=""):
     log_to_csv(timestamp, message, rw, address, value)
     print(f"[{timestamp}] {message}")
 
-# Function to get user input for product, IP address, and port
+# Function to get user input for product, address, and port
 def get_user_input():
-    valid_products = ["TOC", "ROC"]
-    while True:
-        product = input("Enter Product (TOC, ROC): ").strip().upper()
-        if product in valid_products:
-            break
+    config = read_config()
+    product = config.get('product') if config else None
+    address = config.get('address') if config else None
+    port = config.get('port') if config else None
+
+    if product and address:
+        print(f"Loaded from config file: Product={product}, Address={address}")
+        if is_valid_ip(address) and port and port.isdigit() and 0 < int(port) < 65536:
+            return product, "network", address, int(port)
+        elif os.name == 'nt' and is_valid_com_port(address):
+            return product, "com", address, None
         else:
+            print(f"{RED}Invalid address or port in config file.{RESET}")
+            product, address, port = None, None, None
+
+    valid_products = ["TOC", "ROC"]
+    while not product:
+        product = input("Enter Product (TOC, ROC): ").strip().upper()
+        if product not in valid_products:
             print(f"{RED}Invalid product. Please enter one of the following: TOC, ROC.{RESET}")
+            product = None
     
-    while True:
-        address = input("Enter IP Address or COM port: ").strip()
-        if is_valid_ip(address):
+    while not address:
+        address_input = input("Enter IP Address or COM port: ").strip()
+        if is_valid_ip(address_input):
             connection_type = "network"
-            ip_address = address
-            while True:
+            address = address_input
+            while not port:
                 port = input("Enter port number (usually 10001): ").strip()
-                if port.isdigit() and 0 < int(port) < 65536:
-                    port = int(port)
-                    break
-                else:
+                if not (port.isdigit() and 0 < int(port) < 65536):
                     print(f"{RED}Invalid port format. Please enter a number between 1 and 65535.{RESET}")
-            return product, connection_type, ip_address, port
-        elif is_valid_com_port(address):
+                    port = None
+            return product, connection_type, address, int(port)
+        elif os.name == 'nt' and is_valid_com_port(address_input):
             connection_type = "com"
-            com_port = address
+            address = address_input
             try:
-                serial.Serial(com_port)
-                return product, connection_type, com_port, None
+                serial.Serial(address)
+                return product, connection_type, address, None
             except serial.SerialException as e:
-                print(f"{RED}Error: Could not open COM port {com_port}. Details: {e}{RESET}")
+                print(f"{RED}Error: Could not open COM port {address}. Details: {e}{RESET}")
         else:
             print(f"{RED}Invalid input. Please enter a valid IP address or COM port.{RESET}")
+
+# Function to read config file
+def read_config():
+    config = {}
+    if os.path.isfile('config.ini'):
+        with open('config.ini', 'r') as file:
+            for line in file:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    key, value = line.split('=', 1)
+                    config[key.strip()] = value.strip()
+    return config
 
 # Function to validate IP address
 def is_valid_ip(ip):
@@ -107,8 +132,12 @@ def is_valid_hex(value):
 
 # Function to get user commands from input or file
 def get_user_commands():
+    config = read_config()
+    aliases = {k.lower(): v for k, v in config.items() if k.lower() not in ['product', 'address', 'port']}
+
     while True:
         commands = input("Enter commands separated by ';' (or help): ").strip()
+
         if commands.lower() == "help":
             print("Command format:")
             print("  Read: r <address>")
@@ -119,16 +148,23 @@ def get_user_commands():
             print("  Comments: #<comment>")
             print("Example: r 1234; w 5678 9ABC; delay=2; cont")
             continue
-        
+
         # Remove trailing semicolon if present
         if commands.endswith(';'):
             commands = commands[:-1]
-        
+
         command_list = commands.split(';')
         parsed_commands = []
         continuous_flag = False
         for command in command_list:
             command = command.strip()
+            command_lower = command.lower()
+            if command_lower in aliases:
+                if os.path.isfile(command + ".txt"):
+                    print(f"{YELLOW}Warning: Both a text file and a config file alias have the name '{command}'. The config file alias will take precedence.{RESET}")
+                command = aliases[command_lower]
+                command_list.extend(command.split(';'))
+                continue
             if command.endswith('.txt'):
                 file_name = command
             else:
@@ -164,8 +200,8 @@ def get_user_commands():
                 rw, address, val = parts
                 parsed_commands.append((rw, address, val))
             else:
-                print(f"{RED}Invalid command format: {command}. The first argument must be 'r' or 'w'. The second and third arguments must be 16-bit hexadecimal values.{RESET}")
-                return False, []
+                print(f"{RED}Invalid command format: {command}. Type 'help' for command format.{RESET}")
+                return False, [], continuous_flag
         return True, parsed_commands, continuous_flag
 
 # Function to create a data packet
@@ -194,7 +230,7 @@ def check_key_press():
 
 # Main function to handle the client-server communication
 def main():
-    product, connection_type, host_or_com, port = get_user_input()
+    product, connection_type, address, port = get_user_input()
 
     if connection_type == "network":
         # Create a TCP socket
@@ -203,21 +239,21 @@ def main():
         # Connect to the server
         try:
             client_socket.settimeout(5)  # Set a timeout of 5 seconds
-            client_socket.connect((host_or_com, port))
-            print(f"Connected to server at {host_or_com}:{port}")
+            client_socket.connect((address, port))
+            print(f"Connected to server at {address}:{port}")
         except socket.timeout:
-            print(f"{RED}Error: Connection to {host_or_com} timed out.{RESET}")
+            print(f"{RED}Error: Connection to {address} timed out.{RESET}")
             return
         except socket.gaierror:
-            print(f"{RED}Error: The IP address {host_or_com} cannot be found.{RESET}")
+            print(f"{RED}Error: The IP address {address} cannot be found.{RESET}")
             return
         except socket.error as e:
             if e.errno == 111:  # Connection refused
-                print(f"{RED}Error: Connection refused by {host_or_com}.{RESET}")
+                print(f"{RED}Error: Connection refused by {address}.{RESET}")
             elif e.errno == 113:  # No route to host
-                print(f"{RED}Error: No route to host {host_or_com}.{RESET}")
+                print(f"{RED}Error: No route to host {address}.{RESET}")
             else:
-                print(f"{RED}Error: The IP address {host_or_com} is in use or cannot be connected to. Details: {e}{RESET}")
+                print(f"{RED}Error: The IP address {address} is in use or cannot be connected to. Details: {e}{RESET}")
             return
 
         while True:
@@ -276,20 +312,20 @@ def main():
                 if not continuous_flag:
                     break
             print("-" * 50)  # Horizontal line after all command results
-    else:
+    elif os.name == 'nt':
         # Create a serial connection
         try:
-            ser = serial.Serial(host_or_com, 9600, timeout=1)
+            ser = serial.Serial(address, 9600, timeout=1)
             # Test the connection by writing and reading a test message
             test_message = b'\x00'
             ser.write(test_message)
             response = ser.read(1)
             if response != test_message:
-                print(f"{RED}Error: No Server listening on {host_or_com.upper()}.{RESET}")
+                print(f"{RED}Error: No Server listening on {address.upper()}.{RESET}")
                 return
-            print(f"Connected to {host_or_com.upper()}")
+            print(f"Connected to {address.upper()}")
         except serial.SerialException as e:
-            print(f"{RED}Error: Could not open COM port {host_or_com}. Details: {e}{RESET}")
+            print(f"{RED}Error: Could not open COM port {address}. Details: {e}{RESET}")
             return
 
         while True:
