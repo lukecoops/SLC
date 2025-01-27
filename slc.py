@@ -231,7 +231,7 @@ def create_data_packet(product, rw, address, val=None):
 # Function to check for key press
 def check_key_press():
     if os.name == 'nt':
-        return msvcrt.kbhit() and msvcrt.getch().decode('utf-8').lower() == 'c'
+        return msvcrt.kbhit() and msvcrt.getch().decode('utf-8').lower() == 'q'
     else:
         return check_key_press_linux()
 
@@ -244,7 +244,7 @@ def check_key_press_linux():
         dr, dw, de = select.select([sys.stdin], [], [], 0)
         if dr:
             key = sys.stdin.read(1)
-            return key.lower() == 'c'
+            return key.lower() == 'q'
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
     return False
@@ -283,8 +283,15 @@ def main():
                 continue
             print("-" * 50)  # Horizontal line before command results
             if continuous_flag:
-                print("Continuous send enabled. Press 'C' to cancel.")
-            while True:
+                print("Continuous send enabled. Press 'Q' to cancel.")
+            while continuous_flag:
+                if not commands:
+                    if check_key_press():
+                        print("Continuous send stopped.")
+                        continuous_flag = False
+                        break
+                    time.sleep(0.1)
+                    continue
                 for command in commands:
                     if command[0] == 'delay':
                         time.sleep(command[1])
@@ -293,12 +300,12 @@ def main():
                     if rw == 'w' and address and val:
                         print_with_timestamp(f"Write Complete. Address: {address}, Value: {val}", rw, address, val)
                         packet = create_data_packet(product, rw, address, val)
-                        client_socket.sendall(packet)
-                        # Read back to verify
-                        packet = create_data_packet(product, 'r', address)
-                        client_socket.sendall(packet)
-                        time.sleep(0.1)  # Small delay before reading the response
                         try:
+                            client_socket.sendall(packet)
+                            # Read back to verify
+                            packet = create_data_packet(product, 'r', address)
+                            client_socket.sendall(packet)
+                            time.sleep(0.1)  # Small delay before reading the response
                             response = client_socket.recv(4)
                             if len(response) >= 4:
                                 data_word = struct.unpack('<H', response[2:4])[0]  # Extract 4th byte followed by 3rd byte
@@ -310,11 +317,12 @@ def main():
                                 print(f"{RED}Unknown error: {response}{RESET}")
                         except socket.timeout:
                             print(f"{RED}Error: Server response timed out.{RESET}")
+                            return
                     elif rw == 'r' and address:
                         packet = create_data_packet(product, rw, address)
-                        client_socket.sendall(packet)
-                        time.sleep(0.1)  # Small delay before reading the response
                         try:
+                            client_socket.sendall(packet)
+                            time.sleep(0.1)  # Small delay before reading the response
                             response = client_socket.recv(4)
                             if len(response) >= 4:
                                 data_word = struct.unpack('<H', response[2:4])[0]  # Extract 4th byte followed by 3rd byte
@@ -323,6 +331,7 @@ def main():
                                 print(f"{RED}Unknown error: {response}{RESET}")
                         except socket.timeout:
                             print(f"{RED}Error: Server response timed out.{RESET}")
+                            return
                     else:
                         print(f"{RED}Please enter a valid command{RESET}")
                     time.sleep(0.5)  # Delay of 0.5 seconds between commands
@@ -355,8 +364,15 @@ def main():
                 continue
             print("-" * 50)  # Horizontal line before command results
             if continuous_flag:
-                print("Continuous send enabled. Press 'C' to cancel.")
-            while True:
+                print("Continuous send enabled. Press 'Q' to cancel.")
+            while continuous_flag:
+                if not commands:
+                    if check_key_press():
+                        print("Continuous send stopped.")
+                        continuous_flag = False
+                        break
+                    time.sleep(0.1)
+                    continue
                 for command in commands:
                     if command[0] == 'delay':
                         time.sleep(command[1])
