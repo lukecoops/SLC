@@ -222,11 +222,7 @@ def check_key_press():
     if os.name == 'nt':
         return msvcrt.kbhit() and msvcrt.getch().decode('utf-8').lower() == 'c'
     else:
-        dr, dw, de = select.select([sys.stdin], [], [], 0)
-        if dr:
-            key = sys.stdin.read(1)
-            return key.lower() == 'c'
-        return False
+        return check_key_press_linux()
 
 # Function to check for key press in Linux
 def check_key_press_linux():
@@ -320,14 +316,9 @@ def main():
                         print(f"{RED}Please enter a valid command{RESET}")
                     time.sleep(0.5)  # Delay of 0.5 seconds between commands
                 if continuous_flag:
-                    if os.name == 'nt':
-                        if check_key_press():
-                            print("Continuous send stopped.")
-                            break
-                    else:
-                        if check_key_press_linux():
-                            print("Continuous send stopped.")
-                            break
+                    if check_key_press():
+                        print("Continuous send stopped.")
+                        break
                 if not continuous_flag:
                     break
             print("-" * 50)  # Horizontal line after all command results
@@ -390,14 +381,9 @@ def main():
                         print(f"{RED}Please enter a valid command{RESET}")
                     time.sleep(0.5)  # Delay of 0.5 seconds between commands
                 if continuous_flag:
-                    if os.name == 'nt':
-                        if check_key_press():
-                            print("Continuous send stopped.")
-                            break
-                    else:
-                        if check_key_press_linux():
-                            print("Continuous send stopped.")
-                            break
+                    if check_key_press():
+                        print("Continuous send stopped.")
+                        break
                 if not continuous_flag:
                     break
             print("-" * 50)  # Horizontal line after all command results
