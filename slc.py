@@ -7,6 +7,7 @@ import csv
 from datetime import datetime, timedelta, timezone
 import sys
 import select
+import threading
 
 # Import msvcrt for detecting key presses on Windows
 if os.name == 'nt':
@@ -134,9 +135,15 @@ def is_valid_hex(value):
 def get_user_commands():
     config = read_config()
     aliases = {k.lower(): v for k, v in config.items() if k.lower() not in ['product', 'address', 'port']}
+    timeout = 600  # 10 minutes timeout in seconds
 
     while True:
-        commands = input("Enter commands separated by ';' (or help): ").strip()
+        timer = threading.Timer(timeout, timeout_handler)
+        timer.start()
+        try:
+            commands = input("Enter commands separated by ';' (or help): ").strip()
+        finally:
+            timer.cancel()
 
         if commands.lower() == "help":
             print("Command format:")
@@ -204,6 +211,10 @@ def get_user_commands():
                 return False, [], continuous_flag
         return True, parsed_commands, continuous_flag
 
+def timeout_handler():
+    print(f"{RED}Session timed out due to inactivity.{RESET}")
+    os._exit(1)
+
 # Function to create a data packet
 def create_data_packet(product, rw, address, val=None):
     rw_bit = 1 if rw == 'r' else 0  # This sets rw_bit to 1 for read and 0 for write
@@ -229,7 +240,7 @@ def check_key_press_linux():
     fd = sys.stdin.fileno()
     old_settings = termios.tcgetattr(fd)
     try:
-        tty.setraw(fd)
+        tty.setcbreak(fd)
         dr, dw, de = select.select([sys.stdin], [], [], 0)
         if dr:
             key = sys.stdin.read(1)
